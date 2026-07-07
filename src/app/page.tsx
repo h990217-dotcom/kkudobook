@@ -815,9 +815,9 @@ export default function ChallengeDashboard() {
           <BookOpen className="w-6 h-6 text-amber-500 shrink-0 animate-pulse" />
         </h1>
 
-        {/* Subtitle: 꾸도북 */}
+        {/* Subtitle: 꾸도북 2026 */}
         <p className="mt-2 text-md sm:text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-amber-600 to-emerald-700 tracking-wide">
-          꾸도챌 시즌2
+          꾸도북 2026
         </p>
 
         {/* Badge Pill */}
