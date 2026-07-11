@@ -47,6 +47,7 @@ export default function ChallengeDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showDaysView, setShowDaysView] = useState(false); // Toggle to show "Day X" instead of "Month.Day"
+  const [showOverview, setShowOverview] = useState(false); // Toggle for "한눈에 보기"
   const [error, setError] = useState<string | null>(null);
   
   const [isOfflineMode, setIsOfflineMode] = useState(false); // Local backup state
@@ -902,14 +903,6 @@ export default function ChallengeDashboard() {
                 </span>
                 <span>로그인</span>
               </div>
-              
-              {/* Help escape button for Google OAuth issues in restricted webviews */}
-              <button
-                onClick={handleForceEscapeBrowser}
-                className="mt-2.5 text-[9px] font-bold text-slate-500 hover:text-amber-600 underline decoration-dotted cursor-pointer flex items-center justify-center gap-1 bg-slate-100 hover:bg-slate-200 px-3 py-1 rounded-full border border-slate-200/50 shadow-sm transition-colors"
-              >
-                <span>🌐</span> 구글 로그인 오류(403) 해결하기
-              </button>
             </div>
           )}
 
@@ -924,6 +917,15 @@ export default function ChallengeDashboard() {
           >
             <Calendar className="w-3.5 h-3.5" />
             <span>일차 보기</span>
+          </div>
+
+          {/* 한눈에 보기 Button */}
+          <div 
+            onClick={() => setShowOverview(true)}
+            className="bg-zinc-800 text-white border border-zinc-700 px-4 py-2 rounded-full flex items-center gap-1 font-bold text-xs transition-all duration-300 shadow-sm cursor-pointer hover:scale-105 hover:bg-zinc-700"
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            <span>한눈에 보기</span>
           </div>
         </div>
 
@@ -1198,6 +1200,61 @@ CREATE POLICY "Allow public delete" ON public.memos FOR DELETE USING (true);`}
       <footer className="text-center mt-12 text-[10px] text-zinc-400 font-medium">
         © 2026 Kkudobook Challenge Dashboard. Syncing via Supabase. (Build: v10.8)
       </footer>
+
+      {/* 한눈에 보기 (Overview) Modal */}
+      {showOverview && (
+        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex flex-col p-4 sm:p-6 overflow-y-auto">
+          <div className="w-full max-w-2xl mx-auto bg-[#111111] rounded-3xl border border-zinc-800 p-6 sm:p-8 shadow-2xl mt-10 mb-10 relative">
+            <button 
+              onClick={() => setShowOverview(false)}
+              className="absolute top-6 right-6 text-zinc-400 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-full p-2 transition-colors"
+            >
+              <AlertCircle className="w-5 h-5 rotate-45" />
+            </button>
+            <div className="mb-8">
+              <h2 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2">
+                <span>📊</span> 한눈에 보기
+              </h2>
+            </div>
+            
+            <div className="flex flex-col gap-6">
+              {dynamicParticipants.map((participant) => {
+                const config = MONTH_CONFIGS.find(c => c.monthNum === selectedMonth);
+                const prefix = config ? `${config.year}-${String(selectedMonth).padStart(2, '0')}-` : '2026-07-';
+                
+                const monthCheckedCount = participant.checkedDates.filter(d => d.startsWith(prefix)).length;
+                const monthPercentage = activeMonthTotalDays > 0 
+                  ? Math.round((monthCheckedCount / activeMonthTotalDays) * 100) 
+                  : 0;
+
+                return (
+                  <div key={`overview-${participant.id}`} className="flex flex-col gap-2">
+                    <div className="text-white font-bold text-sm sm:text-base">
+                      {participant.name}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 h-4 bg-[#1a1a1a] overflow-hidden relative">
+                        {/* Striped background pattern for the uncompleted part */}
+                        <div className="absolute inset-0" style={{
+                          backgroundImage: 'repeating-linear-gradient(-45deg, transparent, transparent 4px, rgba(255,255,255,0.15) 4px, rgba(255,255,255,0.15) 5px)'
+                        }}></div>
+                        {/* Completed part */}
+                        <div 
+                          className="h-full bg-[#eeeeee] relative z-10 transition-all duration-500"
+                          style={{ width: `${monthPercentage}%` }}
+                        />
+                      </div>
+                      <div className="text-zinc-200 text-xs sm:text-sm font-medium shrink-0 text-right w-24">
+                        {monthCheckedCount}일 / {activeMonthTotalDays}일 ({monthPercentage}%)
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Mobile In-App Browser Guidance Modal with robust inline styles */}
       {showInAppBrowserModal && (
