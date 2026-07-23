@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-import { BookOpen, Calendar, RefreshCw, AlertCircle, LogOut, Pencil } from 'lucide-react';
+import { Sparkles, Calendar, RefreshCw, AlertCircle, LogOut, Pencil } from 'lucide-react';
 
 interface SupabaseMemoRow {
   id: string;
@@ -22,6 +22,13 @@ const MONTH_CONFIGS = [
 
 const CHALLENGE_START_DATE = '2026-07-05';
 const TOTAL_CHALLENGE_DAYS = 182;
+
+// Safari-safe date parser: 'YYYY-MM-DD' 하이픈 포맷은 iOS Safari에서 Invalid Date가 됩니다.
+// 숫자 인자 방식으로 로컬 날짜를 안전하게 생성합니다.
+const parseSafariDate = (isoStr: string): Date => {
+  const [year, month, day] = isoStr.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
 
 interface ParticipantData {
   id: string;
@@ -58,32 +65,12 @@ export default function ChallengeDashboard() {
 
   const nameInputRef = useRef<HTMLInputElement>(null);
 
-  // In-app browser detection on mount (only auto-open modal for iOS)
+  // In-app browser detection on mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const userAgent = navigator.userAgent.toLowerCase();
-      const isInApp = 
-        userAgent.indexOf('kakaotalk') > -1 ||
-        userAgent.indexOf('instagram') > -1 ||
-        userAgent.indexOf('fbav') > -1 ||
-        userAgent.indexOf('fban') > -1 ||
-        userAgent.indexOf('naver') > -1 ||
-        userAgent.indexOf('band') > -1 ||
-        userAgent.indexOf('line') > -1 ||
-        userAgent.indexOf('wv') > -1 ||
-        userAgent.indexOf('gsa') > -1 ||
-        userAgent.indexOf('slack') > -1 ||
-        userAgent.indexOf('twitter') > -1 ||
-        userAgent.indexOf('tiktok') > -1 ||
-        userAgent.indexOf('inapp') > -1;
-
-      if (isInApp) {
-        const isIos = /iphone|ipad|ipod/.test(userAgent);
-        // iOS users get the guide modal automatically on mount
-        if (isIos) {
-          setShowInAppBrowserModal(true);
-        }
-      }
+      const mobile = /android|iphone|ipad|ipod/.test(userAgent);
+      setIsMobileDevice(mobile);
     }
   }, []);
 
@@ -133,9 +120,9 @@ export default function ChallengeDashboard() {
       setIsMobileDevice(mobile);
     }
 
-    const savedLocalStamps = localStorage.getItem('book_local_checked_stamps_v1');
-    const savedLocalUrl = localStorage.getItem('book_local_time_capsule_url_v1');
-    const savedLocalName = localStorage.getItem('book_local_user_nickname_v1');
+    const savedLocalStamps = localStorage.getItem('local_checked_stamps_v5');
+    const savedLocalUrl = localStorage.getItem('local_time_capsule_url_v5');
+    const savedLocalName = localStorage.getItem('local_user_nickname_v5');
 
     if (savedLocalStamps) {
       try { setCheckedDates(JSON.parse(savedLocalStamps)); } catch (e) {}
@@ -148,6 +135,22 @@ export default function ChallengeDashboard() {
       setNameInput(savedLocalName);
     }
   }, []);
+
+  // Safe localStorage helper
+  const safeSetLocalStorage = (key: string, value: string) => {
+    try {
+      localStorage.setItem(key, value);
+    } catch (e) {
+      console.warn('localStorage setItem blocked:', e);
+    }
+  };
+  const safeRemoveLocalStorage = (key: string) => {
+    try {
+      localStorage.removeItem(key);
+    } catch (e) {
+      console.warn('localStorage removeItem blocked:', e);
+    }
+  };
 
   // Fetch verified dates, URL, and Nicknames from Supabase memos table
   const fetchStamps = async () => {
@@ -172,51 +175,51 @@ export default function ChallengeDashboard() {
         const userId = session?.user?.id || 'local';
 
         // 1. Parse checked stamps for current user
-        const stampPrefix = `book_stamp:${userId}:`;
+        const stampPrefix = `stamp:${userId}:`;
         const stamps = data
           .filter(row => row.content && row.content.startsWith(stampPrefix))
           .map(row => row.content.replace(stampPrefix, ''));
         
         setCheckedDates(stamps);
-        localStorage.setItem('book_local_checked_stamps_v1', JSON.stringify(stamps));
+        safeSetLocalStorage('local_checked_stamps_v5', JSON.stringify(stamps));
 
         // 2. Parse Time Capsule URL for current user
-        const urlPrefix = `book_url:${userId}:`;
+        const urlPrefix = `url:${userId}:`;
         const urlRow = data.find(row => row.content && row.content.startsWith(urlPrefix));
         if (urlRow) {
           const urlVal = urlRow.content.replace(urlPrefix, '');
           setTimeCapsuleUrl(urlVal);
-          localStorage.setItem('book_local_time_capsule_url_v1', urlVal);
+          safeSetLocalStorage('local_time_capsule_url_v5', urlVal);
         }
 
         // 3. Parse Custom Nickname for current user
-        const nicknamePrefix = `book_profile_nickname:${userId}:`;
+        const nicknamePrefix = `profile_nickname:${userId}:`;
         const nicknameRow = data.find(row => row.content && row.content.startsWith(nicknamePrefix));
         if (nicknameRow) {
           const nameVal = nicknameRow.content.replace(nicknamePrefix, '');
           setUserNickname(nameVal);
           setNameInput(nameVal);
-          localStorage.setItem('book_local_user_nickname_v1', nameVal);
+          safeSetLocalStorage('local_user_nickname_v5', nameVal);
         } else if (session?.user) {
           const googleName = session.user.user_metadata?.full_name || '참가자 1';
           setUserNickname(googleName);
           setNameInput(googleName);
-          localStorage.setItem('book_local_user_nickname_v1', googleName);
+          safeSetLocalStorage('local_user_nickname_v5', googleName);
         }
 
         // 4. Auto-register new logged in user into database if not present
         if (session?.user) {
-          const hasNickname = data.some(row => row.content && row.content.startsWith(`book_profile_nickname:${userId}:`));
-          const hasJoinTime = data.some(row => row.content && row.content.startsWith(`book_join_time:${userId}:`));
+          const hasNickname = data.some(row => row.content && row.content.startsWith(`profile_nickname:${userId}:`));
+          const hasJoinTime = data.some(row => row.content && row.content.startsWith(`join_time:${userId}:`));
 
           if (!hasNickname || !hasJoinTime) {
             const googleName = session.user.user_metadata?.full_name || '참가자';
             const inserts = [];
             if (!hasNickname) {
-              inserts.push({ content: `book_profile_nickname:${userId}:${googleName}` });
+              inserts.push({ content: `profile_nickname:${userId}:${googleName}` });
             }
             if (!hasJoinTime) {
-              inserts.push({ content: `book_join_time:${userId}:${Date.now()}` });
+              inserts.push({ content: `join_time:${userId}:${Date.now()}` });
             }
             const { error: insertError } = await supabase.from('memos').insert(inserts);
             if (insertError) {
@@ -450,7 +453,7 @@ export default function ChallengeDashboard() {
     setSession(mockSession);
     setUserNickname('Seunghee Huh');
     setNameInput('Seunghee Huh');
-    localStorage.setItem('book_local_user_nickname_v1', 'Seunghee Huh');
+    safeSetLocalStorage('local_user_nickname_v5', 'Seunghee Huh');
   };
 
   // Logout
@@ -465,9 +468,9 @@ export default function ChallengeDashboard() {
     setNameInput('참가자 1');
     setCheckedDates([]);
     setTimeCapsuleUrl('');
-    localStorage.removeItem('book_local_user_nickname_v1');
-    localStorage.removeItem('book_local_time_capsule_url_v1');
-    localStorage.removeItem('book_local_checked_stamps_v1');
+    safeRemoveLocalStorage('local_user_nickname_v5');
+    safeRemoveLocalStorage('local_time_capsule_url_v5');
+    safeRemoveLocalStorage('local_checked_stamps_v5');
   };
 
   // Save Custom Nickname
@@ -480,11 +483,11 @@ export default function ChallengeDashboard() {
     }
 
     setUserNickname(nextName);
-    localStorage.setItem('book_local_user_nickname_v1', nextName);
+    safeSetLocalStorage('local_user_nickname_v5', nextName);
     setIsEditingName(false);
 
     const userId = session?.user?.id || 'local';
-    const nicknamePrefix = `book_profile_nickname:${userId}:`;
+    const nicknamePrefix = `profile_nickname:${userId}:`;
     const fullContent = `${nicknamePrefix}${nextName}`;
 
     try {
@@ -515,10 +518,10 @@ export default function ChallengeDashboard() {
       : [...checkedDates, dateIsoStr];
 
     setCheckedDates(nextCheckedDates);
-    localStorage.setItem('book_local_checked_stamps_v1', JSON.stringify(nextCheckedDates));
+    safeSetLocalStorage('local_checked_stamps_v5', JSON.stringify(nextCheckedDates));
 
     const userId = session?.user?.id || 'local';
-    const stampPrefix = `book_stamp:${userId}:`;
+    const stampPrefix = `stamp:${userId}:`;
     const fullContent = `${stampPrefix}${dateIsoStr}`;
 
     try {
@@ -541,10 +544,10 @@ export default function ChallengeDashboard() {
   // Save Time Capsule URL
   const handleSaveUrl = async (urlVal: string) => {
     setTimeCapsuleUrl(urlVal);
-    localStorage.setItem('book_local_time_capsule_url_v1', urlVal);
+    safeSetLocalStorage('local_time_capsule_url_v5', urlVal);
 
     const userId = session?.user?.id || 'local';
-    const urlPrefix = `book_url:${userId}:`;
+    const urlPrefix = `url:${userId}:`;
     const fullContent = `${urlPrefix}${urlVal}`;
 
     try {
@@ -565,8 +568,8 @@ export default function ChallengeDashboard() {
 
   // Helper to calculate sequential Day number since July 5th, 2026
   const getChallengeDayIndex = (dateIsoStr: string) => {
-    const start = new Date(CHALLENGE_START_DATE);
-    const current = new Date(dateIsoStr);
+    const start = parseSafariDate(CHALLENGE_START_DATE);
+    const current = parseSafariDate(dateIsoStr);
     start.setHours(0, 0, 0, 0);
     current.setHours(0, 0, 0, 0);
     const diffTime = current.getTime() - start.getTime();
@@ -637,7 +640,7 @@ export default function ChallengeDashboard() {
           const parts = content.split(':');
           if (parts.length >= 3) {
             const prefix = parts[0];
-            if (prefix === 'book_stamp' || prefix === 'book_profile_nickname' || prefix === 'book_url' || prefix === 'book_join_time') {
+            if (prefix === 'stamp' || prefix === 'profile_nickname' || prefix === 'url' || prefix === 'join_time') {
               return parts[1]; // Returns USER_ID
             }
           }
@@ -648,10 +651,10 @@ export default function ChallengeDashboard() {
 
     // Sort user IDs by join timestamp (ascending - oldest first)
     const sortedUserIds = allUserIds.sort((a, b) => {
-      const timeARow = dbMemos.find(row => row.content && row.content.startsWith(`book_join_time:${a}:`));
-      const timeBRow = dbMemos.find(row => row.content && row.content.startsWith(`book_join_time:${b}:`));
-      const timeA = timeARow ? parseInt(timeARow.content.replace(`book_join_time:${a}:`, '')) : 9999999999999;
-      const timeB = timeBRow ? parseInt(timeBRow.content.replace(`book_join_time:${b}:`, '')) : 9999999999999;
+      const timeARow = dbMemos.find(row => row.content && row.content.startsWith(`join_time:${a}:`));
+      const timeBRow = dbMemos.find(row => row.content && row.content.startsWith(`join_time:${b}:`));
+      const timeA = timeARow ? parseInt(timeARow.content.replace(`join_time:${a}:`, '')) : 9999999999999;
+      const timeB = timeBRow ? parseInt(timeBRow.content.replace(`join_time:${b}:`, '')) : 9999999999999;
       return timeA - timeB;
     });
 
@@ -660,20 +663,20 @@ export default function ChallengeDashboard() {
       const isCurrentUser = uid === currentUserId;
       
       // Parse nickname
-      const nicknameRow = dbMemos.find(row => row.content && row.content.startsWith(`book_profile_nickname:${uid}:`));
+      const nicknameRow = dbMemos.find(row => row.content && row.content.startsWith(`profile_nickname:${uid}:`));
       const nickname = nicknameRow 
-        ? nicknameRow.content.replace(`book_profile_nickname:${uid}:`, '')
+        ? nicknameRow.content.replace(`profile_nickname:${uid}:`, '')
         : isCurrentUser ? userNickname : '참가자';
 
       // Parse checked stamps
-      const stampPrefix = `book_stamp:${uid}:`;
+      const stampPrefix = `stamp:${uid}:`;
       const stamps = dbMemos
         .filter(row => row.content && row.content.startsWith(stampPrefix))
         .map(row => row.content.replace(stampPrefix, ''));
 
       // Parse URL
-      const urlRow = dbMemos.find(row => row.content && row.content.startsWith(`book_url:${uid}:`));
-      const url = urlRow ? urlRow.content.replace(`book_url:${uid}:`, '') : '';
+      const urlRow = dbMemos.find(row => row.content && row.content.startsWith(`url:${uid}:`));
+      const url = urlRow ? urlRow.content.replace(`url:${uid}:`, '') : '';
 
       return {
         id: uid,
@@ -723,12 +726,11 @@ export default function ChallengeDashboard() {
 
   // Dynamic Day calculation since July 5th, 2026
   const challengeDayNumber = useMemo(() => {
-    const start = new Date(CHALLENGE_START_DATE);
+    const start = parseSafariDate(CHALLENGE_START_DATE);
     const today = new Date();
     start.setHours(0, 0, 0, 0);
     today.setHours(0, 0, 0, 0);
     const diffTime = today.getTime() - start.getTime();
-    const diffDays = Math.ceil(today.getTime() - start.getTime() / (1000 * 60 * 60 * 24)) + 1; // Safeguard calculation
     const rawDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
     
     if (rawDays <= 0) {
@@ -778,7 +780,7 @@ export default function ChallengeDashboard() {
       
       {/* Fallback Banner for blocked auto-login redirects */}
       {isRedirecting && (
-        <div className="fixed top-0 left-0 right-0 z-[10000] bg-amber-600 text-white py-3 px-4 text-center font-bold text-xs flex flex-col sm:flex-row items-center justify-center gap-2 shadow-lg">
+        <div className="fixed top-0 left-0 right-0 z-[10000] bg-rose-500 text-white py-3 px-4 text-center font-bold text-xs flex flex-col sm:flex-row items-center justify-center gap-2 shadow-lg">
           <span>🔄 외부 브라우저 연결에 성공했습니다! 아래 버튼을 클릭하여 로그인을 완료해 주세요:</span>
           <button 
             onClick={async () => {
@@ -800,7 +802,7 @@ export default function ChallengeDashboard() {
                 setIsSubmitting(false);
               }
             }}
-            className="bg-white text-amber-700 px-4 py-1.5 rounded-lg font-black hover:bg-amber-50 transition-all text-[11px] shadow-sm cursor-pointer"
+            className="bg-white text-rose-600 px-4 py-1.5 rounded-lg font-black hover:bg-rose-50 transition-all text-[11px] shadow-sm cursor-pointer"
           >
             구글 로그인 계속하기
           </button>
@@ -812,18 +814,18 @@ export default function ChallengeDashboard() {
         
         {/* Main Title */}
         <h1 className="text-4xl sm:text-5xl font-[900] tracking-tight text-slate-800 flex items-center justify-center gap-2 drop-shadow-sm leading-tight">
-          책과 함께하는 오늘
-          <BookOpen className="w-6 h-6 text-amber-500 shrink-0 animate-pulse" />
+          변화는 반복에서 시작된다.
+          <Sparkles className="w-6 h-6 text-rose-400 shrink-0" />
         </h1>
 
-        {/* Subtitle: 꾸도북 2026 */}
-        <p className="mt-2 text-md sm:text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-amber-600 to-emerald-700 tracking-wide">
-          꾸도북 2026
+        {/* Subtitle: 꾸도챌 시즌2 */}
+        <p className="mt-2 text-md sm:text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-rose-500 to-pink-600 tracking-wide">
+          꾸도챌 시즌2
         </p>
 
         {/* Badge Pill */}
-        <div className="mt-4 inline-flex items-center gap-3 bg-white/80 border border-amber-100/50 rounded-full px-3.5 py-1.5 shadow-sm">
-          <span className="bg-amber-600 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full">
+        <div className="mt-4 inline-flex items-center gap-3 bg-white/80 border border-rose-100/50 rounded-full px-3.5 py-1.5 shadow-sm">
+          <span className="bg-rose-500 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full">
             {challengeDayNumber}
           </span>
           <span className="text-[10px] font-bold text-slate-700">
@@ -843,7 +845,7 @@ export default function ChallengeDashboard() {
             /* Logged In */
             <div 
               onClick={() => setIsEditingName(true)}
-              className="bg-[#d97706] hover:bg-[#b45309] text-white px-4 py-2 rounded-full flex items-center gap-1.5 font-bold text-xs shadow-md shadow-amber-600/10 hover:scale-105 transition-all duration-200 cursor-pointer"
+              className="bg-[#f43f5e] hover:bg-[#e11d48] text-white px-4 py-2 rounded-full flex items-center gap-1.5 font-bold text-xs shadow-md shadow-rose-500/10 hover:scale-105 transition-all duration-200 cursor-pointer"
             >
               <span>👋</span>
               {isEditingName ? (
@@ -881,7 +883,7 @@ export default function ChallengeDashboard() {
           {session ? (
             <div 
               onClick={handleLogout}
-              className="bg-white/80 backdrop-blur-md text-zinc-700 border border-amber-100/50 px-4 py-2 rounded-full flex items-center gap-1 font-bold text-xs shadow-sm cursor-pointer hover:bg-slate-50 hover:scale-105 transition-all duration-200"
+              className="bg-white/80 backdrop-blur-md text-zinc-700 border border-rose-100/50 px-4 py-2 rounded-full flex items-center gap-1 font-bold text-xs shadow-sm cursor-pointer hover:bg-slate-50 hover:scale-105 transition-all duration-200"
             >
               <LogOut className="w-3.5 h-3.5 text-slate-500" />
               <span>로그아웃</span>
@@ -891,13 +893,13 @@ export default function ChallengeDashboard() {
               {/* Google Login */}
               <div 
                 onClick={handleGoogleLogin}
-                className="bg-white/80 backdrop-blur-md text-zinc-700 border border-amber-100/50 px-4 py-2 rounded-full flex items-center gap-1.5 font-bold text-xs shadow-sm cursor-pointer hover:bg-slate-50 hover:scale-105 transition-all duration-200"
+                className="bg-white/80 backdrop-blur-md text-zinc-700 border border-rose-100/50 px-4 py-2 rounded-full flex items-center gap-1.5 font-bold text-xs shadow-sm cursor-pointer hover:bg-slate-50 hover:scale-105 transition-all duration-200"
               >
                 <span className="flex items-center">
-                  <span className="text-amber-600 font-extrabold text-[10px]">G</span>
+                  <span className="text-blue-500 font-extrabold text-[10px]">G</span>
                   <span className="text-red-500 font-extrabold text-[10px]">o</span>
                   <span className="text-yellow-500 font-extrabold text-[10px]">o</span>
-                  <span className="text-amber-600 font-extrabold text-[10px]">g</span>
+                  <span className="text-blue-500 font-extrabold text-[10px]">g</span>
                   <span className="text-green-500 font-extrabold text-[10px]">l</span>
                   <span className="text-red-500 font-extrabold text-[10px]">e</span>
                 </span>
@@ -911,8 +913,8 @@ export default function ChallengeDashboard() {
             onClick={() => setShowDaysView(!showDaysView)}
             className={`border px-4 py-2 rounded-full flex items-center gap-1 font-bold text-xs transition-all duration-300 shadow-sm cursor-pointer hover:scale-105 ${
               showDaysView 
-                ? 'bg-amber-600 text-white border-amber-600 shadow-md shadow-amber-600/10'
-                : 'bg-white/80 text-zinc-700 border-amber-100/50 hover:bg-slate-50'
+                ? 'bg-rose-500 text-white border-rose-500 shadow-md shadow-rose-500/10'
+                : 'bg-white/80 text-zinc-700 border-rose-100/50 hover:bg-slate-50'
             }`}
           >
             <Calendar className="w-3.5 h-3.5" />
@@ -924,13 +926,13 @@ export default function ChallengeDashboard() {
             onClick={() => setShowOverview(true)}
             className="bg-zinc-800 text-white border border-zinc-700 px-4 py-2 rounded-full flex items-center gap-1 font-bold text-xs transition-all duration-300 shadow-sm cursor-pointer hover:scale-105 hover:bg-zinc-700"
           >
-            <BookOpen className="w-3.5 h-3.5" />
+            <Sparkles className="w-3.5 h-3.5" />
             <span>한눈에 보기</span>
           </div>
         </div>
 
         {/* Monthly Switcher Row */}
-        <div className="flex flex-wrap gap-1.5 items-center justify-center p-1 bg-amber-600/5 border border-amber-100/50 rounded-full">
+        <div className="flex flex-wrap gap-1.5 items-center justify-center p-1 bg-rose-500/5 border border-rose-100/50 rounded-full">
           {MONTH_CONFIGS.map(cfg => {
             const isSelected = selectedMonth === cfg.monthNum;
             return (
@@ -939,8 +941,8 @@ export default function ChallengeDashboard() {
                 onClick={() => setSelectedMonth(cfg.monthNum)}
                 className={`text-[10px] sm:text-xs font-black px-4.5 py-1.5 rounded-full transition-all duration-300 ${
                   isSelected 
-                    ? 'bg-amber-600 text-white shadow-md shadow-amber-600/10 scale-105' 
-                    : 'text-slate-600 hover:text-amber-700 hover:bg-white/50'
+                    ? 'bg-rose-500 text-white shadow-md shadow-rose-500/10 scale-105' 
+                    : 'text-slate-600 hover:text-rose-600 hover:bg-white/50'
                 }`}
               >
                 {cfg.label}
@@ -1039,8 +1041,8 @@ CREATE POLICY "Allow public delete" ON public.memos FOR DELETE USING (true);`}
                 key={participant.id}
                 className={`glass-card rounded-[1.8rem] p-5 transition-all duration-300 flex flex-col justify-between ${
                   participant.isCurrentUser 
-                    ? 'border-2 border-amber-500 glow-amber' 
-                    : 'border border-amber-100/50'
+                    ? 'border-2 border-sky-400 glow-rose' 
+                    : 'border border-rose-100/50'
                 }`}
               >
                 <div>
@@ -1062,16 +1064,16 @@ CREATE POLICY "Allow public delete" ON public.memos FOR DELETE USING (true);`}
                                 setIsEditingName(false);
                               }
                             }}
-                            className="bg-slate-50 border border-amber-300 outline-none rounded px-1.5 py-0.5 text-base font-black w-24 text-zinc-800"
+                            className="bg-slate-50 border border-rose-200 outline-none rounded px-1.5 py-0.5 text-base font-black w-24 text-zinc-800"
                           />
                         ) : (
                           <h2 
                             onClick={() => setIsEditingName(true)}
-                            className="text-lg font-black text-zinc-800 cursor-pointer hover:text-amber-600 flex items-center gap-1.5 group"
+                            className="text-lg font-black text-zinc-800 cursor-pointer hover:text-rose-500 flex items-center gap-1.5 group"
                             title="클릭하여 이름 수정"
                           >
                             <span>{participant.name}</span>
-                            <Pencil className="w-3.5 h-3.5 text-zinc-400 group-hover:text-amber-600 transition-colors" />
+                            <Pencil className="w-3.5 h-3.5 text-zinc-400 group-hover:text-rose-500 transition-colors" />
                           </h2>
                         )
                       ) : (
@@ -1082,7 +1084,7 @@ CREATE POLICY "Allow public delete" ON public.memos FOR DELETE USING (true);`}
                       )}
 
                       {participant.isCurrentUser && (
-                        <span className="w-4 h-4 rounded-full bg-amber-600 text-white text-[9px] font-bold flex items-center justify-center shrink-0">
+                        <span className="w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-bold flex items-center justify-center shrink-0">
                           나
                         </span>
                       )}
@@ -1092,7 +1094,7 @@ CREATE POLICY "Allow public delete" ON public.memos FOR DELETE USING (true);`}
                       <div className="text-sm font-black text-zinc-800">
                         {monthCheckedCount}<span className="text-zinc-400 font-normal text-[10px]">/{activeMonthTotalDays}</span>
                       </div>
-                      <div className="text-[9px] font-black text-amber-600">
+                      <div className="text-[9px] font-black text-rose-500">
                         {selectedMonth}월: {monthPercentage}%
                       </div>
                     </div>
@@ -1103,7 +1105,7 @@ CREATE POLICY "Allow public delete" ON public.memos FOR DELETE USING (true);`}
                     <div 
                       className={`h-full rounded-full transition-all duration-500 ${
                         participant.isCurrentUser 
-                          ? 'bg-gradient-to-r from-amber-500 via-amber-600 to-emerald-600 ease-out' 
+                          ? 'bg-gradient-to-r from-rose-400 via-rose-500 to-pink-500 ease-out' 
                           : 'bg-slate-300'
                       }`}
                       style={{ width: `${monthPercentage}%` }}
@@ -1126,10 +1128,10 @@ CREATE POLICY "Allow public delete" ON public.memos FOR DELETE USING (true);`}
                           disabled={isLoading}
                           className={`w-6.5 h-6.5 rounded-full flex items-center justify-center text-[8px] font-black transition-all duration-200 border cursor-pointer hover:scale-110 ${
                             isChecked
-                              ? 'bg-amber-600 border-amber-600 text-white shadow-sm shadow-amber-600/25'
+                              ? 'bg-rose-500 border-rose-500 text-white shadow-sm shadow-rose-500/25'
                               : isToday
                                 ? 'border border-pink-500 text-pink-500 bg-pink-500/5 font-black ring-1 ring-pink-500/10'
-                                : 'bg-slate-100/70 border-slate-200/50 text-slate-500 hover:bg-amber-50 hover:text-amber-700'
+                                : 'bg-slate-100/70 border-slate-200/50 text-slate-500 hover:bg-rose-50 hover:text-rose-600'
                           }`}
                         >
                           {day.label}
@@ -1158,7 +1160,7 @@ CREATE POLICY "Allow public delete" ON public.memos FOR DELETE USING (true);`}
                   <div className="flex justify-between items-center">
                     <label className="text-[9px] font-black text-slate-500">저서 URL :</label>
                     {(participant.isCurrentUser ? timeCapsuleUrl : participant.timeCapsuleUrl) && (
-                      <a href={(participant.isCurrentUser ? timeCapsuleUrl : participant.timeCapsuleUrl).startsWith('http') ? (participant.isCurrentUser ? timeCapsuleUrl : participant.timeCapsuleUrl) : `https://${(participant.isCurrentUser ? timeCapsuleUrl : participant.timeCapsuleUrl)}`} target="_blank" rel="noopener noreferrer" className="text-[9px] font-bold text-amber-600 hover:underline">
+                      <a href={(participant.isCurrentUser ? timeCapsuleUrl : participant.timeCapsuleUrl).startsWith('http') ? (participant.isCurrentUser ? timeCapsuleUrl : participant.timeCapsuleUrl) : `https://${(participant.isCurrentUser ? timeCapsuleUrl : participant.timeCapsuleUrl)}`} target="_blank" rel="noopener noreferrer" className="text-[9px] font-bold text-rose-500 hover:underline">
                         이동 ↗
                       </a>
                     )}
@@ -1170,13 +1172,13 @@ CREATE POLICY "Allow public delete" ON public.memos FOR DELETE USING (true);`}
                       value={timeCapsuleUrl}
                       onChange={(e) => handleSaveUrl(e.target.value)}
                       placeholder="저서 링크를 입력해 주세요..."
-                      className="w-full bg-slate-50 border border-slate-200 focus:border-amber-400 outline-none rounded-lg px-2.5 py-1 text-[10px] text-slate-700 transition-all font-medium"
+                      className="w-full bg-slate-50 border border-slate-200 focus:border-rose-300 outline-none rounded-lg px-2.5 py-1 text-[10px] text-slate-700 transition-all font-medium"
                     />
                   ) : (
                     /* Read-only Book URL for other participants */
                     <div className="w-full bg-slate-50/50 border border-slate-100 text-[10px] text-slate-400 rounded-lg px-2.5 py-1 truncate font-medium">
                       {participant.timeCapsuleUrl ? (
-                        <a href={participant.timeCapsuleUrl.startsWith('http') ? participant.timeCapsuleUrl : `https://${participant.timeCapsuleUrl}`} target="_blank" rel="noopener noreferrer" className="hover:underline hover:text-amber-600">
+                        <a href={participant.timeCapsuleUrl.startsWith('http') ? participant.timeCapsuleUrl : `https://${participant.timeCapsuleUrl}`} target="_blank" rel="noopener noreferrer" className="hover:underline hover:text-rose-500">
                           {participant.timeCapsuleUrl}
                         </a>
                       ) : (
@@ -1189,7 +1191,7 @@ CREATE POLICY "Allow public delete" ON public.memos FOR DELETE USING (true);`}
                 {/* Overall Season Progress footer */}
                 <div className="mt-3 pt-3 border-t border-slate-100/80 flex justify-between items-center text-[9px] text-slate-400 font-bold">
                   <span>전체 시즌 달성률</span>
-                  <span className={participant.isCurrentUser ? 'text-amber-600' : 'text-slate-500'}>
+                  <span className={participant.isCurrentUser ? 'text-rose-500' : 'text-slate-500'}>
                     {overallCheckedCount}/{TOTAL_CHALLENGE_DAYS}일 ({overallPercentage}%)
                   </span>
                 </div>
@@ -1211,7 +1213,7 @@ CREATE POLICY "Allow public delete" ON public.memos FOR DELETE USING (true);`}
 
       {/* Footer info */}
       <footer className="text-center mt-12 text-[10px] text-zinc-400 font-medium">
-        © 2026 Kkudobook Challenge Dashboard. Syncing via Supabase. (Build: v10.8)
+        © 2026 Kkudoki Challenge Dashboard. Syncing via Supabase. (Build: v10.9)
       </footer>
 
       {/* 한눈에 보기 (Overview) Modal */}
@@ -1286,7 +1288,7 @@ CREATE POLICY "Allow public delete" ON public.memos FOR DELETE USING (true);`}
           <div style={{
             backgroundColor: '#ffffff',
             borderRadius: '28px',
-            border: '1px solid #e0f2fe',
+            border: '1px solid #ffe4e6',
             padding: '24px',
             maxWidth: '360px',
             width: '100%',
@@ -1300,13 +1302,13 @@ CREATE POLICY "Allow public delete" ON public.memos FOR DELETE USING (true);`}
               width: '48px',
               height: '48px',
               borderRadius: '9999px',
-              backgroundColor: '#e0f2fe',
+              backgroundColor: '#ffe4e6',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               marginBottom: '16px'
             }}>
-              <AlertCircle className="w-6 h-6 text-amber-600" />
+              <AlertCircle className="w-6 h-6 text-rose-500" />
             </div>
             
             <h3 style={{
@@ -1326,13 +1328,13 @@ CREATE POLICY "Allow public delete" ON public.memos FOR DELETE USING (true);`}
             </p>
             
             <div style={{
-              backgroundColor: '#f0f9ff',
-              border: '1px solid rgba(14, 165, 233, 0.1)',
+              backgroundColor: '#fff1f2',
+              border: '1px solid rgba(244, 63, 94, 0.1)',
               borderRadius: '16px',
               padding: '16px',
               width: '100%',
               fontSize: '11px',
-              color: '#0369a1',
+              color: '#9f1239',
               fontWeight: 'bold',
               marginBottom: '24px',
               textAlign: 'left',
@@ -1343,7 +1345,7 @@ CREATE POLICY "Allow public delete" ON public.memos FOR DELETE USING (true);`}
                   width: '18px',
                   height: '18px',
                   borderRadius: '9999px',
-                  backgroundColor: '#d97706',
+                  backgroundColor: '#f43f5e',
                   color: '#ffffff',
                   display: 'flex',
                   alignItems: 'center',
@@ -1352,14 +1354,14 @@ CREATE POLICY "Allow public delete" ON public.memos FOR DELETE USING (true);`}
                   flexShrink: 0,
                   fontWeight: 900
                 }}>1</span>
-                <span>화면 우측 상단(또는 하단)의 <strong style={{ color: '#b45309' }}>더보기(…)</strong> 또는 메뉴를 누릅니다.</span>
+                <span>화면 우측 상단(또는 하단)의 <strong style={{ color: '#be123c' }}>더보기(…)</strong> 또는 메뉴를 누릅니다.</span>
               </p>
               <p style={{ display: 'flex', alignItems: 'start', gap: '6px' }}>
                 <span style={{
                   width: '18px',
                   height: '18px',
                   borderRadius: '9999px',
-                  backgroundColor: '#d97706',
+                  backgroundColor: '#f43f5e',
                   color: '#ffffff',
                   display: 'flex',
                   alignItems: 'center',
@@ -1368,7 +1370,7 @@ CREATE POLICY "Allow public delete" ON public.memos FOR DELETE USING (true);`}
                   flexShrink: 0,
                   fontWeight: 900
                 }}>2</span>
-                <span><strong style={{ color: '#b45309' }}>[기본 브라우저로 열기]</strong> 또는 <strong style={{ color: '#b45309' }}>[크롬/Safari로 열기]</strong>를 누릅니다.</span>
+                <span><strong style={{ color: '#be123c' }}>[기본 브라우저로 열기]</strong> 또는 <strong style={{ color: '#be123c' }}>[크롬/Safari로 열기]</strong>를 누릅니다.</span>
               </p>
             </div>
 
@@ -1380,7 +1382,7 @@ CREATE POLICY "Allow public delete" ON public.memos FOR DELETE USING (true);`}
               }}
               style={{
                 width: '100%',
-                backgroundColor: '#d97706',
+                backgroundColor: '#f43f5e',
                 color: '#ffffff',
                 fontWeight: 'bold',
                 padding: '14px 0',
@@ -1388,7 +1390,7 @@ CREATE POLICY "Allow public delete" ON public.memos FOR DELETE USING (true);`}
                 fontSize: '13px',
                 border: 'none',
                 cursor: 'pointer',
-                boxShadow: '0 10px 15px -3px rgba(14, 165, 233, 0.3)',
+                boxShadow: '0 10px 15px -3px rgba(244, 63, 94, 0.3)',
                 transition: 'background-color 0.2s'
               }}
             >
