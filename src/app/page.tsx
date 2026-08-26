@@ -34,6 +34,11 @@ interface ParticipantData {
 
 export default function ChallengeDashboard() {
   const [selectedMonth, setSelectedMonth] = useState<number>(7); // Defaults to July (7월)
+  
+  useEffect(() => {
+    setSelectedMonth(new Date().getMonth() + 1);
+  }, []);
+
   const [session, setSession] = useState<any>(null); // Supabase Auth Session
   
   const [userNickname, setUserNickname] = useState<string>('참가자 1'); 
@@ -646,17 +651,8 @@ export default function ChallengeDashboard() {
         .filter((item): item is string => !!item)
     ));
 
-    // Sort user IDs by join timestamp (ascending - oldest first)
-    const sortedUserIds = allUserIds.sort((a, b) => {
-      const timeARow = dbMemos.find(row => row.content && row.content.startsWith(`book_join_time:${a}:`));
-      const timeBRow = dbMemos.find(row => row.content && row.content.startsWith(`book_join_time:${b}:`));
-      const timeA = timeARow ? parseInt(timeARow.content.replace(`book_join_time:${a}:`, '')) : 9999999999999;
-      const timeB = timeBRow ? parseInt(timeBRow.content.replace(`book_join_time:${b}:`, '')) : 9999999999999;
-      return timeA - timeB;
-    });
-
     // Map each user ID to participant data
-    const realParticipants = sortedUserIds.map(uid => {
+    const realParticipants = allUserIds.map(uid => {
       const isCurrentUser = uid === currentUserId;
       
       // Parse nickname
@@ -699,6 +695,9 @@ export default function ChallengeDashboard() {
         isMock: false
       });
     }
+
+    // Sort participants by number of checked dates (descending)
+    result.sort((a, b) => b.checkedDates.length - a.checkedDates.length);
 
     // Pad with empty mock cards up to 19 participants, sequentially naming them '참가자 [index]'
     const neededMocksCount = 19 - result.length;
