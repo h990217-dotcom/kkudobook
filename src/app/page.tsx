@@ -32,6 +32,23 @@ interface ParticipantData {
   isMock: boolean;
 }
 
+const PUBLIC_HOLIDAYS_2026 = [
+  '2026-08-15', '2026-08-17',
+  '2026-09-23', '2026-09-24', '2026-09-25', '2026-09-26', '2026-09-27',
+  '2026-10-03', '2026-10-05', '2026-10-09',
+  '2026-12-25',
+  '2027-01-01'
+];
+
+const getDayType = (isoStr: string) => {
+  if (PUBLIC_HOLIDAYS_2026.includes(isoStr)) return 'holiday';
+  const date = new Date(isoStr);
+  const day = date.getDay();
+  if (day === 0) return 'holiday';
+  if (day === 6) return 'saturday';
+  return 'weekday';
+};
+
 export default function ChallengeDashboard() {
   const [selectedMonth, setSelectedMonth] = useState<number>(7); // Defaults to July (7월)
   
@@ -1117,6 +1134,17 @@ CREATE POLICY "Allow public delete" ON public.memos FOR DELETE USING (true);`}
                         ? (todayDayIndexLabel && day.label === todayDayIndexLabel)
                         : (day.label === todayLabel);
 
+                      const dayType = getDayType(day.isoStr);
+                      const defaultColorClass = 
+                        dayType === 'holiday' ? 'text-red-400 bg-red-50/30 border-red-100/50' : 
+                        dayType === 'saturday' ? 'text-blue-400 bg-blue-50/30 border-blue-100/50' : 
+                        'text-slate-500 bg-slate-100/70 border-slate-200/50';
+
+                      const readOnlyColorClass = 
+                        dayType === 'holiday' ? 'text-red-300 bg-red-50/20 border-red-100/30' : 
+                        dayType === 'saturday' ? 'text-blue-300 bg-blue-50/20 border-blue-100/30' : 
+                        'text-slate-300 bg-slate-50/50 border-slate-100/40';
+
                       return participant.isCurrentUser ? (
                         /* Active toggle stamps for current user */
                         <button
@@ -1128,7 +1156,7 @@ CREATE POLICY "Allow public delete" ON public.memos FOR DELETE USING (true);`}
                               ? 'bg-amber-600 border-amber-600 text-white shadow-sm shadow-amber-600/25'
                               : isToday
                                 ? 'border border-pink-500 text-pink-500 bg-pink-500/5 font-black ring-1 ring-pink-500/10'
-                                : 'bg-slate-100/70 border-slate-200/50 text-slate-500 hover:bg-amber-50 hover:text-amber-700'
+                                : `${defaultColorClass} hover:bg-amber-50 hover:text-amber-700`
                           }`}
                         >
                           {day.label}
@@ -1142,7 +1170,7 @@ CREATE POLICY "Allow public delete" ON public.memos FOR DELETE USING (true);`}
                               ? 'bg-slate-700 border-slate-700 text-white shadow-sm shadow-slate-700/25'
                               : isToday
                                 ? 'border border-pink-500 text-pink-500 bg-pink-500/5 font-black ring-1 ring-pink-500/10'
-                                : 'bg-slate-50/50 border-slate-100/40 text-slate-300'
+                                : readOnlyColorClass
                           }`}
                         >
                           {day.label}
